@@ -203,7 +203,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
       <button class="htab active" onclick="switchTab('jogos',this)"><i class="ti ti-calendar"></i><span>Jogos</span></button>
       <button class="htab" onclick="switchTab('classificacao',this)"><i class="ti ti-table"></i><span>Classificação</span></button>
       <button class="htab" onclick="switchTab('meus',this)"><i class="ti ti-list-check"></i><span>Palpites</span></button>
-      <button class="htab" onclick="switchTab('config',this)"><i class="ti ti-settings"></i><span>Config</span></button>
+      <button class="htab" id="tab-btn-config" onclick="switchTab('config',this)"><i class="ti ti-settings"></i><span>Config</span></button>
     </div>
   </div>
 </header>
@@ -402,9 +402,42 @@ function flagHtml(team, isoFromApi) {
 
 // ── ODDS ENGINE ────────────────────────────────────────────────────────────
 // Called when real odds not available — simple model
-function calcFallbackOdds() {
-  // Neutral 50/30/20 split — we don't have ranking from Zafronix /matches
-  return { h:2.50, d:3.20, a:2.80, pH:35, pD:28, pA:37, real:false };
+// Approximate FIFA world rankings mid-2026 for fallback odds model
+const FIFA_RANK = {
+  'Argentina':1,'France':2,'England':3,'Brazil':4,'Belgium':5,'Portugal':6,
+  'Netherlands':7,'Spain':8,'Croatia':9,'Italy':10,'Morocco':11,'USA':12,
+  'Mexico':13,'Denmark':14,'Germany':15,'Uruguay':16,'Colombia':17,'Switzerland':18,
+  'Senegal':19,'Japan':20,'Austria':21,'South Korea':22,'Ecuador':23,'Australia':24,
+  'Hungary':25,'Turkey':26,'Poland':27,'Ukraine':28,'Serbia':29,'Iran':30,
+  'Tunisia':31,'Czechia':32,'Czech Republic':32,'Canada':33,'Chile':34,'Venezuela':35,
+  'Algeria':36,'South Africa':37,'Egypt':38,'Ghana':39,'Nigeria':40,'Cameroon':41,
+  'Bolivia':42,'Paraguay':43,'Costa Rica':44,'Peru':45,'Honduras':46,'Panama':47,
+  'El Salvador':48,'Haiti':49,'Jamaica':50,'Qatar':51,'Saudi Arabia':52,'Iraq':53,
+  'Uzbekistan':54,'Indonesia':55,'Jordan':56,'New Zealand':57,'Vietnam':58,
+  'Cuba':59,'Guatemala':60,'Trinidad and Tobago':61,'Curaçao':62,'Andorra':63,
+  'Ivory Coast':40,"Côte d'Ivoire":40,'Mali':41,'Kenya':48,'Romania':26,
+  'Slovakia':30,'Slovenia':35,'Georgia':38,'Albania':40,'Montenegro':44,
+};
+
+function calcFallbackOdds(homeTeam, awayTeam) {
+  const rH = FIFA_RANK[homeTeam] || 50;
+  const rA = FIFA_RANK[awayTeam] || 50;
+  const diff = rA - rH; // positive = home better ranked
+  // Home advantage ~3 rank positions
+  const adjDiff = diff + 3;
+  const pH = Math.min(0.68, Math.max(0.20, 0.5 + adjDiff * 0.006));
+  const pA = Math.min(0.65, Math.max(0.18, 1 - pH - 0.25));
+  const pD = Math.max(0.12, 1 - pH - pA);
+  const margin = 1.07;
+  return {
+    h: +(margin/pH).toFixed(2),
+    d: +(margin/pD).toFixed(2),
+    a: +(margin/pA).toFixed(2),
+    pH: Math.round(pH*100),
+    pD: Math.round(pD*100),
+    pA: Math.round(pA*100),
+    real: false
+  };
 }
 
 // Build lookup key matching the Odds API team names to Zafronix names
@@ -469,7 +502,7 @@ function getOddsForMatch(m) {
     const real = findOdds(m.homeTeam, m.awayTeam);
     if (real) return real;
   }
-  return calcFallbackOdds();
+  return calcFallbackOdds(m.homeTeam, m.awayTeam);
 }
 
 // ── TIP ENGINE ────────────────────────────────────────────────────────────
@@ -505,9 +538,19 @@ function genTip(m, o) {
       reason += ` 💡 Valor no empate: odd ${o.d} com ${o.pD}% implícito pode valer a aposta dupla.`;
     }
   } else {
-    // Fallback: neutral — no real odds
-    pick='Aguardar odds'; score='?'; conf='b';
-    reason='Odds reais não disponíveis. Configure a The Odds API para receber sugestões baseadas no mercado. Até lá, o palpite é neutro.';
+    // Fallback model based on FIFA rankings
+    if (o.pH >= 52) {
+      pick=m.homeTeam; conf=o.pH>=62?'m':'b';
+      score=o.pH>=65?'2-0':'2-1';
+      reason=`Modelo baseado no ranking FIFA: ${m.homeTeam} tem ${o.pH}% de probabilidade (odd estimada ${o.h}). Ative a The Odds API na aba Config para odds reais de casas de apostas.`;
+    } else if (o.pA >= 52) {
+      pick=m.awayTeam; conf=o.pA>=62?'m':'b';
+      score=o.pA>=65?'0-2':'1-2';
+      reason=`Modelo baseado no ranking FIFA: ${m.awayTeam} favorito com ${o.pA}% (odd estimada ${o.a}). Ative a The Odds API na aba Config para odds reais.`;
+    } else {
+      pick='Empate'; conf='b'; score='1-1';
+      reason=`Modelo FIFA aponta jogo equilibrado — empate com ${o.pD}% de chance (odd estimada ${o.d}). Ative a The Odds API para análise real de mercado.`;
+    }
   }
 
   return {pick,score,reason,conf};
@@ -517,14 +560,16 @@ function genTip(m, o) {
 async function loadOdds() {
   const key=getOdds(); if(!key){oddsLoaded=false;return;}
   try {
+    // Sport key confirmed: soccer_fifa_world_cup
     const data = await oddsFetch('/sports/soccer_fifa_world_cup/odds', {
-      regions:'eu,uk', markets:'h2h', oddsFormat:'decimal', dateFormat:'iso'
+      regions:'eu,uk', markets:'h2h', oddsFormat:'decimal'
     });
-    if (data && Array.isArray(data)) {
+    if (data && Array.isArray(data) && data.length > 0) {
       liveOdds = parseOddsResponse(data);
       oddsLoaded = true;
+      console.log(`Odds loaded: ${data.length} events`);
     }
-  } catch(e){ console.warn('Odds API error:', e); }
+  } catch(e){ console.warn('Odds API error:', e.message||e); }
 }
 
 // ── NORMALIZE MATCH ────────────────────────────────────────────────────────
@@ -560,13 +605,12 @@ function norm(raw) {
 
 // ── PHASE ORDERING ─────────────────────────────────────────────────────────
 const PHASE_ORDER = {
-  'group': 0,   // matchday 1 = 1, 2 = 2, 3 = 3
-  'round_of_32': 4,
-  'round_of_16': 5,
-  'quarter_final': 6,
-  'semi_final': 7,
-  'third_place': 8,
-  'final': 9,
+  'group': 0,
+  'round_of_16': 4,
+  'quarter_final': 5,
+  'semi_final': 6,
+  'third_place': 7,
+  'final': 8,
 };
 
 function stageOrder(stageNorm) {
@@ -575,28 +619,31 @@ function stageOrder(stageNorm) {
 }
 
 function buildPhases(matches) {
-  // Split group matches into matchday 1, 2, 3 by actual date buckets
+  // WC 2026 group stage matchday date ranges (UTC)
+  // Matchday 1: Jun 12–18  |  Matchday 2: Jun 19–25  |  Matchday 3: Jun 26 – Jul 2
+  const MD_RANGES = [
+    { md:1, from:'2026-06-12', to:'2026-06-18' },
+    { md:2, from:'2026-06-19', to:'2026-06-25' },
+    { md:3, from:'2026-06-26', to:'2026-06-27' },
+  ];
+
+  function matchdayOf(m) {
+    // Prefer API-provided matchday field
+    if (m.matchday && m.matchday >= 1 && m.matchday <= 3) return m.matchday;
+    const d = m.date?.slice(0,10);
+    if (!d) return 3;
+    for (const r of MD_RANGES) {
+      if (d >= r.from && d <= r.to) return r.md;
+    }
+    return 3;
+  }
+
   const groupMatches = matches.filter(m => m.stageNorm.startsWith('group_'));
   const otherMatches = matches.filter(m => !m.stageNorm.startsWith('group_'));
 
-  // Get unique dates for group stage, sorted
-  const groupDates = [...new Set(groupMatches.map(m => m.date?.slice(0,10)).filter(Boolean))].sort();
-  const n = groupDates.length;
-  // Divide into 3 equal slices
-  const slice1 = groupDates.slice(0, Math.ceil(n/3));
-  const slice2 = groupDates.slice(Math.ceil(n/3), Math.ceil(2*n/3));
-
-  const matchdayOf = m => {
-    const d = m.date?.slice(0,10);
-    if (!d) return 3;
-    if (slice1.includes(d)) return 1;
-    if (slice2.includes(d)) return 2;
-    return 3;
-  };
-
   const map = {};
 
-  // Group matchdays
+  // Group matchdays — only assign a match to matchday N if its date falls in that range
   groupMatches.forEach(m => {
     const md = matchdayOf(m);
     const id = `r${md}`;
@@ -608,12 +655,11 @@ function buildPhases(matches) {
   otherMatches.forEach(m => {
     const sn = m.stageNorm;
     let id, label, order;
-    if (sn==='round_of_32') { id='r32'; label='32avas de final'; order=4; }
-    else if (sn==='round_of_16') { id='r16'; label='16avas de final'; order=5; }
-    else if (sn==='quarter_final') { id='qf'; label='Quartas de final'; order=6; }
-    else if (sn==='semi_final') { id='sf'; label='Semifinal'; order=7; }
-    else if (sn==='third_place') { id='tp'; label='3º Lugar'; order=8; }
-    else if (sn==='final') { id='fin'; label='Final'; order=9; }
+    if (sn==='round_of_16') { id='r16'; label='16avas de final'; order=4; }
+    else if (sn==='quarter_final') { id='qf'; label='Quartas de final'; order=5; }
+    else if (sn==='semi_final') { id='sf'; label='Semifinal'; order=6; }
+    else if (sn==='third_place') { id='tp'; label='3º Lugar'; order=7; }
+    else if (sn==='final') { id='fin'; label='Final'; order=8; }
     else { id='oth'; label='Outros'; order=99; }
     if (!map[id]) map[id] = { id, label, order, matches:[] };
     map[id].matches.push(m);
@@ -788,7 +834,7 @@ function renderCard(m) {
   const id=m.id;
   const oddsLabel=o.real
     ?`<span class="odds-src real"><i class="ti ti-circle-check" style="font-size:11px"></i> Odds reais · ${o.bookmakers?.slice(0,2).join(', ')||'média'}</span>`
-    :`<span class="odds-src"><i class="ti ti-calculator" style="font-size:11px"></i> Odds estimadas — configure a The Odds API para reais</span>`;
+    :`<span class="odds-src"><i class="ti ti-calculator" style="font-size:11px"></i> Odds estimadas por modelo FIFA${getOdds()?'':' · <a href="#" onclick="switchTabById(\"config\")" style="color:var(--blue);">Ativar odds reais</a>'}</span>`;
 
   return `<div class="mc${hasPk}${liveCls}" id="card-${id}">
     <div class="mc-meta">
