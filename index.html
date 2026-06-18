@@ -352,40 +352,44 @@ async function oddsFetch(path, params={}) {
 // ── FLAGS ──────────────────────────────────────────────────────────────────
 // ISO-2 map — covers all 48 World Cup 2026 teams + common nations
 const ISO2 = {
-  'Argentina':'ar','Australia':'au','Austria':'at','Belgium':'be',
-  'Bolivia':'bo','Brazil':'br','Canada':'ca','Chile':'cl','China':'cn',
-  'Colombia':'co','Costa Rica':'cr','Croatia':'hr','Cuba':'cu',
-  'Czech Republic':'cz','Denmark':'dk','Ecuador':'ec','Egypt':'eg',
-  'El Salvador':'sv','England':'gb-eng','France':'fr','Georgia':'ge',
-  'Germany':'de','Ghana':'gh','Greece':'gr','Guatemala':'gt',
-  'Haiti':'ht','Honduras':'hn','Hungary':'hu','Indonesia':'id',
-  'Iran':'ir','Iraq':'iq','Italy':'it','Ivory Coast':'ci',
-  "Côte d'Ivoire":'ci','Jamaica':'jm','Japan':'jp','Jordan':'jo',
-  'Kenya':'ke','Kuwait':'kw','Mali':'ml','Mexico':'mx','Morocco':'ma',
-  'Netherlands':'nl','New Zealand':'nz','Nigeria':'ng','Norway':'no',
-  'Panama':'pa','Paraguay':'py','Peru':'pe','Poland':'pl',
-  'Portugal':'pt','Qatar':'qa','Romania':'ro','Saudi Arabia':'sa',
-  'Scotland':'gb-sct','Senegal':'sn','Serbia':'rs','Slovakia':'sk',
-  'Slovenia':'si','South Africa':'za','South Korea':'kr','Spain':'es',
-  'Sweden':'se','Switzerland':'ch','Trinidad and Tobago':'tt',
-  'Tunisia':'tn','Turkey':'tr','Ukraine':'ua','United States':'us',
-  'USA':'us','Uruguay':'uy','Uzbekistan':'uz','Venezuela':'ve',
-  'Vietnam':'vn','Wales':'gb-wls','Algeria':'dz','Angola':'ao',
-  'Bahrain':'bh','Cameroon':'cm','Congo DR':'cd','Cuba':'cu',
-  'Curaçao':'cw','Mozambique':'mz','Oman':'om','Thailand':'th',
-  'Zambia':'zm','Zimbabwe':'zw','Montenegro':'me','Albania':'al',
-  'North Macedonia':'mk','Belarus':'by','Finland':'fi',
-  'Rep. of Ireland':'ie','Ireland':'ie','Israel':'il','Bosnia and Herzegovina':'ba',
-  'Andorra':'ad','Kosovo':'xk','Moldova':'md','Armenia':'am',
-  'Azerbaijan':'az','Kazakhstan':'kz','Malta':'mt','Cyprus':'cy',
-  'Liechtenstein':'li','Luxembourg':'lu','Faroe Islands':'fo',
-  'Iceland':'is','Lithuania':'lt','Latvia':'lv','Estonia':'ee',
-  'San Marino':'sm','Gibraltar':'gi','Antigua and Barbuda':'ag',
-  'Barbados':'bb','Belize':'bz','Bermuda':'bm','Dominica':'dm',
-  'Dominican Republic':'do','Grenada':'gd','Guyana':'gy',
-  'Montserrat':'ms','Nicaragua':'ni','Saint Kitts and Nevis':'kn',
-  'Saint Lucia':'lc','Saint Vincent':'vc','Suriname':'sr',
-  'United States Virgin Islands':'vi',
+  // Americas
+  'Argentina':'ar','Bolivia':'bo','Brazil':'br','Canada':'ca','Chile':'cl',
+  'Colombia':'co','Costa Rica':'cr','Cuba':'cu','Ecuador':'ec',
+  'El Salvador':'sv','Guatemala':'gt','Haiti':'ht','Honduras':'hn',
+  'Jamaica':'jm','Mexico':'mx','Nicaragua':'ni','Panama':'pa','Paraguay':'py',
+  'Peru':'pe','Trinidad and Tobago':'tt','United States':'us','USA':'us',
+  'Uruguay':'uy','Venezuela':'ve',
+  // Caribbean/special
+  'Curaçao':'cw','Curacao':'cw','Bermuda':'bm','Guyana':'gy','Suriname':'sr',
+  'Cape Verde':'cv','Cabo Verde':'cv',
+  // Europe
+  'Albania':'al','Andorra':'ad','Armenia':'am','Austria':'at','Azerbaijan':'az',
+  'Belarus':'by','Belgium':'be','Bosnia and Herzegovina':'ba','Bosnia & Herzegovina':'ba',
+  'Bulgaria':'bg','Croatia':'hr','Cyprus':'cy','Czech Republic':'cz','Czechia':'cz',
+  'Denmark':'dk','England':'gb-eng','Estonia':'ee','Faroe Islands':'fo',
+  'Finland':'fi','France':'fr','Georgia':'ge','Germany':'de','Gibraltar':'gi',
+  'Greece':'gr','Hungary':'hu','Iceland':'is','Ireland':'ie','Rep. of Ireland':'ie',
+  'Israel':'il','Italy':'it','Kazakhstan':'kz','Kosovo':'xk','Latvia':'lv',
+  'Liechtenstein':'li','Lithuania':'lt','Luxembourg':'lu','Malta':'mt',
+  'Moldova':'md','Montenegro':'me','Netherlands':'nl','North Macedonia':'mk',
+  'Norway':'no','Poland':'pl','Portugal':'pt','Romania':'ro','Russia':'ru',
+  'San Marino':'sm','Scotland':'gb-sct','Serbia':'rs','Slovakia':'sk',
+  'Slovenia':'si','Spain':'es','Sweden':'se','Switzerland':'ch','Turkey':'tr',
+  'Ukraine':'ua','Wales':'gb-wls',
+  // Africa
+  'Algeria':'dz','Angola':'ao','Cameroon':'cm','Congo DR':'cd','DR Congo':'cd',
+  "Côte d'Ivoire":'ci','Ivory Coast':'ci','Cote d Ivoire':'ci',
+  'Egypt':'eg','Ghana':'gh','Kenya':'ke','Mali':'ml','Morocco':'ma',
+  'Mozambique':'mz','Nigeria':'ng','Senegal':'sn','South Africa':'za',
+  'Tunisia':'tn','Zambia':'zm','Zimbabwe':'zw',
+  // Asia / Middle East
+  'Australia':'au','Bahrain':'bh','China':'cn','Indonesia':'id',
+  'Iran':'ir','Iraq':'iq','Japan':'jp','Jordan':'jo','Kuwait':'kw',
+  'New Zealand':'nz','Oman':'om','Qatar':'qa','Saudi Arabia':'sa',
+  'South Korea':'kr','Korea Republic':'kr','Thailand':'th',
+  'Uzbekistan':'uz','Vietnam':'vn',
+  // WC 2026 specific
+  'Türkiye':'tr',
 };
 
 function flagUrl(team, isoFromApi) {
@@ -481,22 +485,34 @@ function parseOddsResponse(oddsData) {
 }
 
 // Fuzzy match team names between APIs (strip accents, lowercase)
-// Team name aliases: Zafronix name -> The Odds API name
+// Team name aliases: normalize to The Odds API canonical names
 const TEAM_ALIASES = {
+  // Korean peninsula
   'South Korea':'Korea Republic',
-  'Korea Republic':'Korea Republic',
-  'United States':'United States',
+  // USA
   'USA':'United States',
   'US':'United States',
-  'Ivory Coast':'Cote d Ivoire',
-  "Côte d'Ivoire":'Cote d Ivoire',
-  'Czech Republic':'Czech Republic',
+  // Ivory Coast
+  "Côte d'Ivoire":'Ivory Coast',
+  'Cote d Ivoire':'Ivory Coast',
+  // Czech
   'Czechia':'Czech Republic',
-  'DR Congo':'DR Congo',
+  // Congo
   'Congo DR':'DR Congo',
-  'North Macedonia':'North Macedonia',
+  'Democratic Republic of the Congo':'DR Congo',
+  // Bosnia
   'Bosnia and Herzegovina':'Bosnia & Herzegovina',
+  // Turkey
+  'Türkiye':'Turkey',
+  // Cape Verde
+  'Cabo Verde':'Cape Verde',
+  // Curacao
+  'Curaçao':'Curacao',
+  // Trinidad
   'Trinidad and Tobago':'Trinidad & Tobago',
+  // Scotland / Wales for odds api
+  'Scotland':'Scotland',
+  'Wales':'Wales',
 };
 
 function canonical(name) {
@@ -655,28 +671,63 @@ function stageOrder(stageNorm) {
 function buildPhases(matches) {
   // WC 2026 group stage matchday date ranges (UTC)
   // Matchday 1: Jun 12–18  |  Matchday 2: Jun 19–25  |  Matchday 3: Jun 26 – Jul 2
-  const MD_RANGES = [
-    { md:1, from:'2026-06-12', to:'2026-06-18' },
-    { md:2, from:'2026-06-19', to:'2026-06-25' },
-    { md:3, from:'2026-06-26', to:'2026-06-27' },
+  // WC 2026 local kickoff date ranges per matchday
+  // Games are stored by Zafronix using UTC dates, so late-night US games
+  // (e.g. 21:00 Dallas = 03:00 UTC next day) shift by 1 day in UTC.
+  // Strategy: always prefer API matchday field; fall back to LOCAL date logic
+  // by checking a ±1 day window, resolved by which range is closest.
+  const MD_LOCAL = [
+    { md:1, from:'2026-06-12', to:'2026-06-18' }, // local dates R1
+    { md:2, from:'2026-06-18', to:'2026-06-23' }, // local dates R2
+    { md:3, from:'2026-06-24', to:'2026-06-27' }, // local dates R3
+  ];
+  // UTC ranges (late games push into next UTC day)
+  const MD_UTC = [
+    { md:1, from:'2026-06-12', to:'2026-06-19' },
+    { md:2, from:'2026-06-19', to:'2026-06-24' },
+    { md:3, from:'2026-06-24', to:'2026-06-28' },
   ];
 
   function matchdayOf(m) {
-    // Prefer API-provided matchday field
+    // 1. Prefer API matchday field (most reliable)
     if (m.matchday && m.matchday >= 1 && m.matchday <= 3) return m.matchday;
-    // Use date — convert to UTC date string to avoid timezone issues
-    let d = m.date;
-    if (!d) return 3;
-    // If datetime with time (e.g. "2026-06-19T19:00:00Z"), extract UTC date
-    if (d.length > 10) {
-      d = new Date(d).toISOString().slice(0,10);
+
+    if (!m.date) return 3;
+
+    // 2. Try to determine if the date is UTC or local
+    const raw = m.date;
+    let utcDate, localDate;
+
+    if (raw.length > 10) {
+      // Full ISO datetime — extract UTC date
+      utcDate = new Date(raw).toISOString().slice(0,10);
+      // Also estimate local date (approximate: subtract 4-7h for US timezones)
+      // Use UTC-5 as median US timezone for WC 2026
+      const shifted = new Date(new Date(raw).getTime() - 5*3600000);
+      localDate = shifted.toISOString().slice(0,10);
     } else {
-      d = d.slice(0,10);
+      utcDate = raw.slice(0,10);
+      localDate = raw.slice(0,10);
     }
-    for (const r of MD_RANGES) {
-      if (d >= r.from && d <= r.to) return r.md;
+
+    // 3. Check UTC ranges first (more conservative — avoids false positives)
+    for (const r of MD_UTC) {
+      if (utcDate >= r.from && utcDate <= r.to) {
+        // If utcDate falls in overlap zone (Jun 24), disambiguate by local date
+        if (utcDate === '2026-06-24') {
+          // R2 local ends Jun 23, R3 local starts Jun 24
+          return localDate >= '2026-06-24' ? 3 : 2;
+        }
+        return r.md;
+      }
     }
-    return 3; // default to matchday 3 if after all ranges
+
+    // 4. Fallback to local date
+    for (const r of MD_LOCAL) {
+      if (localDate >= r.from && localDate <= r.to) return r.md;
+    }
+
+    return 3;
   }
 
   const groupMatches = matches.filter(m => m.stageNorm.startsWith('group_'));
