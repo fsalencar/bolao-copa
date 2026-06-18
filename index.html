@@ -451,7 +451,6 @@ function parseOddsResponse(oddsData) {
   if (!Array.isArray(oddsData)) return map;
   oddsData.forEach(ev => {
     const home = ev.home_team, away = ev.away_team;
-    // Collect all h2h bookmaker odds
     let hVals=[], dVals=[], aVals=[], bkNames=[];
     (ev.bookmakers||[]).forEach(bk => {
       const market = (bk.markets||[]).find(m => m.key==='h2h');
@@ -465,32 +464,72 @@ function parseOddsResponse(oddsData) {
       }
     });
     if (!hVals.length) return;
-    const avg = arr => arr.reduce((s,v)=>s+v,0)/arr.length;
-    const h=+avg(hVals).toFixed(2), d=+avg(dVals).toFixed(2), a=+avg(aVals).toFixed(2);
+    const avg = arr => +(arr.reduce((s,v)=>s+v,0)/arr.length).toFixed(2);
+    const h=avg(hVals), d=avg(dVals), a=avg(aVals);
     const tot = 1/h+1/d+1/a;
     const pH=Math.round(100/h/tot), pD=Math.round(100/d/tot), pA=Math.round(100-100/h/tot-100/d/tot);
-    map[oddsKey(home,away)] = { h, d, a, pH, pD, pA, real:true, bookmakers:bkNames.slice(0,3) };
-    // also store reverse key so we can match regardless of home/away order from Zafronix
-    map[oddsKey(away,home)] = { h:a, d, a:h, pH:pA, pD, pA:pH, real:true, bookmakers:bkNames.slice(0,3), reversed:true };
+    const entry = { h, d, a, pH, pD, pA, real:true, bookmakers:bkNames.slice(0,3) };
+    const revEntry = { h:a, d, a:h, pH:pA, pD, pA:pH, real:true, bookmakers:bkNames.slice(0,3) };
+    // Store by original names
+    map[oddsKey(home,away)] = entry;
+    map[oddsKey(away,home)] = revEntry;
+    // Also store by normalized names to help cross-API matching
+    map[oddsKey(normName(home),normName(away))] = entry;
+    map[oddsKey(normName(away),normName(home))] = revEntry;
   });
   return map;
 }
 
 // Fuzzy match team names between APIs (strip accents, lowercase)
+// Team name aliases: Zafronix name -> The Odds API name
+const TEAM_ALIASES = {
+  'South Korea':'Korea Republic',
+  'Korea Republic':'Korea Republic',
+  'United States':'United States',
+  'USA':'United States',
+  'US':'United States',
+  'Ivory Coast':'Cote d Ivoire',
+  "Côte d'Ivoire":'Cote d Ivoire',
+  'Czech Republic':'Czech Republic',
+  'Czechia':'Czech Republic',
+  'DR Congo':'DR Congo',
+  'Congo DR':'DR Congo',
+  'North Macedonia':'North Macedonia',
+  'Bosnia and Herzegovina':'Bosnia & Herzegovina',
+  'Trinidad and Tobago':'Trinidad & Tobago',
+};
+
+function canonical(name) {
+  return TEAM_ALIASES[name] || name;
+}
+
 function normName(n) {
-  return (n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,'').trim();
+  return (n||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9 ]/g,' ')
+    .replace(/\s+/g,' ').trim();
 }
 
 function findOdds(home, away) {
-  // Exact match
-  let o = liveOdds[oddsKey(home,away)];
+  const ch = canonical(home), ca = canonical(away);
+  // 1) Exact match with canonical names
+  let o = liveOdds[oddsKey(ch,ca)];
   if (o) return o;
-  // Fuzzy match
-  const hn=normName(home), an=normName(away);
+  o = liveOdds[oddsKey(ca,ch)];
+  if (o) return {...o, h:o.a, a:o.h, pH:o.pA, pA:o.pH};
+  // 2) Exact match with original names
+  o = liveOdds[oddsKey(home,away)];
+  if (o) return o;
+  o = liveOdds[oddsKey(away,home)];
+  if (o) return {...o, h:o.a, a:o.h, pH:o.pA, pA:o.pH};
+  // 3) Fuzzy: normalize and substring match
+  const hn=normName(ch), an=normName(ca);
   for (const [k,v] of Object.entries(liveOdds)) {
-    const [kh,ka] = k.split('|').map(normName);
-    if ((kh.includes(hn)||hn.includes(kh)) && (ka.includes(an)||an.includes(ka))) return v;
-    if ((kh.includes(an)||an.includes(kh)) && (ka.includes(hn)||hn.includes(ka))) {
+    const [kh,ka] = k.split('|').map(t => normName(canonical(t)));
+    const homeMatch = kh===hn || kh.includes(hn) || hn.includes(kh);
+    const awayMatch = ka===an || ka.includes(an) || an.includes(ka);
+    if (homeMatch && awayMatch) return v;
+    if ((kh===an||kh.includes(an)||an.includes(kh)) && (ka===hn||ka.includes(hn)||hn.includes(ka))) {
       return {...v, h:v.a, a:v.h, pH:v.pA, pA:v.pH};
     }
   }
@@ -517,40 +556,35 @@ function genTip(m, o) {
     return {pick,score,reason,conf};
   }
 
-  if (o.real) {
-    // Value-based tip: pick the outcome with highest implied prob
-    if (o.pH >= 52) {
-      pick=m.homeTeam; conf=o.pH>=62?'a':'m';
-      score=o.pH>=65?'2-0':o.pH>=58?'2-1':'1-0';
-      reason=`Odds das casas de apostas apontam ${o.pH}% de chance para ${m.homeTeam} (odd média: ${o.h}). ${o.bookmakers?.length?'Baseado em '+o.bookmakers.join(', ')+'.':''}`;
-      // Check for value: is the implied prob significantly higher than 50%?
-      if (o.pH>=60) reason += ` Mercado considera ${m.homeTeam} favorito claro.`;
-    } else if (o.pA >= 52) {
-      pick=m.awayTeam; conf=o.pA>=62?'a':'m';
-      score=o.pA>=65?'0-2':o.pA>=58?'1-2':'0-1';
-      reason=`Odds das casas de apostas favorecem ${m.awayTeam} mesmo jogando fora (${o.pA}%, odd: ${o.a}). ${o.bookmakers?.length?'Fonte: '+o.bookmakers.join(', ')+'.':''}`;
-    } else {
-      pick='Empate'; conf='b'; score='1-1';
-      reason=`Mercado aponta jogo equilibrado — empate com ${o.pD}% (odd: ${o.d}). Odd baixa sugere jogo sem favorito claro.`;
-    }
-    // Detect value bet: if one outcome odd > 3.0 but prob > 35%
-    if (o.real && o.pD >= 33 && o.d >= 3.2 && pick!=='Empate') {
-      reason += ` 💡 Valor no empate: odd ${o.d} com ${o.pD}% implícito pode valer a aposta dupla.`;
-    }
+  // Suggest score based on implied probability
+  function suggestScore(winner, pH, pA, isHome) {
+    const dominator = Math.max(pH, pA);
+    if (dominator >= 70) return isHome ? '3-0' : '0-3';
+    if (dominator >= 62) return isHome ? '2-0' : '0-2';
+    if (dominator >= 54) return isHome ? '2-1' : '1-2';
+    return isHome ? '1-0' : '0-1';
+  }
+
+  const src = o.real ? `Odds de mercado (${o.bookmakers?.slice(0,2).join(', ')||'média'})` : `Modelo FIFA`;
+  const srcShort = o.real ? `Casas: ${o.bookmakers?.slice(0,2).join(', ')||'média'}` : 'Estimativa FIFA';
+
+  if (o.pH >= 52) {
+    pick=m.homeTeam;
+    conf = o.pH>=65 ? 'a' : o.pH>=57 ? 'm' : 'b';
+    score = suggestScore(m.homeTeam, o.pH, o.pA, true);
+    reason = `${src} dá ${o.pH}% de chance para ${m.homeTeam} (odd: ${o.h}).`;
+    if (o.pD >= 30 && o.d <= 3.5) reason += ` Empate em conta (${o.pD}%, odd ${o.d}) — considere dupla chance.`;
+  } else if (o.pA >= 52) {
+    pick=m.awayTeam;
+    conf = o.pA>=65 ? 'a' : o.pA>=57 ? 'm' : 'b';
+    score = suggestScore(m.awayTeam, o.pA, o.pH, false);
+    reason = `${src} dá ${o.pA}% de chance para ${m.awayTeam} (odd: ${o.a}).`;
+    if (o.pD >= 30 && o.d <= 3.5) reason += ` Empate possível (${o.pD}%, odd ${o.d}).`;
   } else {
-    // Fallback model based on FIFA rankings
-    if (o.pH >= 52) {
-      pick=m.homeTeam; conf=o.pH>=62?'m':'b';
-      score=o.pH>=65?'2-0':'2-1';
-      reason=`Modelo baseado no ranking FIFA: ${m.homeTeam} tem ${o.pH}% de probabilidade (odd estimada ${o.h}). Ative a The Odds API na aba Config para odds reais de casas de apostas.`;
-    } else if (o.pA >= 52) {
-      pick=m.awayTeam; conf=o.pA>=62?'m':'b';
-      score=o.pA>=65?'0-2':'1-2';
-      reason=`Modelo baseado no ranking FIFA: ${m.awayTeam} favorito com ${o.pA}% (odd estimada ${o.a}). Ative a The Odds API na aba Config para odds reais.`;
-    } else {
-      pick='Empate'; conf='b'; score='1-1';
-      reason=`Modelo FIFA aponta jogo equilibrado — empate com ${o.pD}% de chance (odd estimada ${o.d}). Ative a The Odds API para análise real de mercado.`;
-    }
+    pick = 'Empate';
+    conf = o.pD >= 30 ? 'm' : 'b';
+    score = '1-1';
+    reason = `${src}: jogo equilibrado. Empate com ${o.pD}% (odd ${o.d}), ${m.homeTeam} ${o.pH}% (${o.h}), ${m.awayTeam} ${o.pA}% (${o.a}).`;
   }
 
   return {pick,score,reason,conf};
@@ -630,12 +664,19 @@ function buildPhases(matches) {
   function matchdayOf(m) {
     // Prefer API-provided matchday field
     if (m.matchday && m.matchday >= 1 && m.matchday <= 3) return m.matchday;
-    const d = m.date?.slice(0,10);
+    // Use date — convert to UTC date string to avoid timezone issues
+    let d = m.date;
     if (!d) return 3;
+    // If datetime with time (e.g. "2026-06-19T19:00:00Z"), extract UTC date
+    if (d.length > 10) {
+      d = new Date(d).toISOString().slice(0,10);
+    } else {
+      d = d.slice(0,10);
+    }
     for (const r of MD_RANGES) {
       if (d >= r.from && d <= r.to) return r.md;
     }
-    return 3;
+    return 3; // default to matchday 3 if after all ranges
   }
 
   const groupMatches = matches.filter(m => m.stageNorm.startsWith('group_'));
@@ -653,14 +694,25 @@ function buildPhases(matches) {
 
   // Knockout phases
   otherMatches.forEach(m => {
-    const sn = m.stageNorm;
+    const sn = (m.stageNorm||'').toLowerCase();
+    const sl = (m.stageLabel||m.stageNorm||'').toLowerCase();
     let id, label, order;
-    if (sn==='round_of_16') { id='r16'; label='16avas de final'; order=4; }
-    else if (sn==='quarter_final') { id='qf'; label='Quartas de final'; order=5; }
-    else if (sn==='semi_final') { id='sf'; label='Semifinal'; order=6; }
-    else if (sn==='third_place') { id='tp'; label='3º Lugar'; order=7; }
-    else if (sn==='final') { id='fin'; label='Final'; order=8; }
-    else { id='oth'; label='Outros'; order=99; }
+    if (sn==='round_of_16' || sl.includes('r16') || (sl.includes('16') && !sl.includes('group'))) {
+      id='r16'; label='16avas de final'; order=4;
+    } else if (sn==='quarter_final' || sl.includes('qf') || sl.includes('quarter')) {
+      id='qf'; label='Quartas de final'; order=5;
+    } else if (sn==='semi_final' || sl.includes('sf') || sl.includes('semi')) {
+      id='sf'; label='Semifinal'; order=6;
+    } else if (sn==='third_place' || sl.includes('third') || sl.includes('3rd')) {
+      id='tp'; label='3º Lugar'; order=7;
+    } else if (sn==='final' || sl==='final') {
+      id='fin'; label='Final'; order=8;
+    } else {
+      // Absorb unknowns into the correct matchday instead of showing "Outros"
+      console.warn('Unknown stage, absorbing:', sn, sl, m.id);
+      const md = matchdayOf(m);
+      id=`r${md}`; label=`Rodada ${md}`; order=md;
+    }
     if (!map[id]) map[id] = { id, label, order, matches:[] };
     map[id].matches.push(m);
   });
